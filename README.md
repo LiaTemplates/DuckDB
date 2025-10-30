@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 
-version:  0.0.1
+version:  0.0.2
 
 email:    LiaScript@web.de
 
@@ -78,31 +78,35 @@ window.renderTable = function (rows, opts = {}) {
     html += `<caption style="${captionStyle()}">${escapeHTML(caption)}</caption>`;
 
   // header
-  html += `<thead><tr>`;
-  for (const c of cols) {
-    html += `<th style="${thStyle()}">${escapeHTML(c)}</th>`;
-  }
-  html += `</tr></thead>`;
+    html += `<thead><tr>`;
+    // Add empty header for row number
+    html += `<th style="${thStyle()}"></th>`;
+    for (const c of cols) {
+      html += `<th style="${thStyle()}">${escapeHTML(c)}</th>`;
+    }
+    html += `</tr></thead>`;
 
   // body
-  html += `<tbody>`;
-  for (let i = 0; i < limit; i++) {
-    const row = data[i] ?? {};
-    html += `<tr style="${i % 2 === 0 ? trEvenStyle() : trOddStyle()}">`;
-    for (const c of cols) {
-      html += `<td style="${tdStyle()}">${escapeHTML(formatCell(row[c]))}</td>`;
+    html += `<tbody>`;
+    for (let i = 0; i < limit; i++) {
+      const row = data[i] ?? {};
+      html += `<tr style="${i % 2 === 0 ? trEvenStyle() : trOddStyle()}">`;
+      // Add row number as first cell, no header
+      html += `<td style="${tdStyle('italic', '#888')}">${i + 1}</td>`;
+      for (const c of cols) {
+        html += `<td style="${tdStyle()}">${escapeHTML(formatCell(row[c]))}</td>`;
+      }
+      html += `</tr>`;
     }
-    html += `</tr>`;
-  }
-  html += `</tbody>`;
+    html += `</tbody>`;
 
   // footer if truncated
-  if (limit < data.length) {
-    html += `<tfoot><tr><td colspan="${cols.length}" style="${tdStyle(
-      'italic',
-      '#aaa'
-    )}">Showing ${limit} of ${data.length} rows</td></tr></tfoot>`;
-  }
+    if (limit < data.length) {
+      html += `<tfoot><tr><td colspan="${cols.length + 1}" style="${tdStyle(
+        'italic',
+        '#aaa'
+      )}">Showing ${limit} of ${data.length} rows</td></tr></tfoot>`;
+    }
 
   html += `</table>`;
   return html;
@@ -178,17 +182,21 @@ let db = await window.duckdbinit("@0")
 const conn = await db.connect();
 
 // Run a query
-conn.query(`@input`)
-.then((result) => {
-  console.html(window.renderTable(result.toArray()));
-})
-.catch((error) => {
-  console.error(error.message)
-})
-.finally( async () => {
-  conn.close()
+const statements = `@input`
+  .split(';')
+  .map(s => s.trim())
+  .filter(s => s.length > 0);
+
+for (const stmt of statements) {
+  try {
+    const result = await conn.query(stmt);
+    console.html(window.renderTable(result.toArray()));
+  } catch (error) {
+    console.error("Error executing statement:", stmt, error.message);
+  }
+}
+ conn.close()
   send.lia("")
-})
 
 }, 100)
 
@@ -211,14 +219,22 @@ conn.query(`@input`)
   console.error(error.message)
 })
 
-send.handle("input", (input) => {
-    conn.query(input)
-    .then((result) => {
-      console.html(window.renderTable(result.toArray()))
-    })
-    .catch((err) => {
-      console.error(err.message)
-    })
+send.handle("input", async (input) => {
+    // Run a query
+const statements = input
+  .split(';')
+  .map(s => s.trim())
+  .filter(s => s.length > 0);
+
+for (const stmt of statements) {
+  try {
+    const result = await conn.query(stmt);
+    console.html(window.renderTable(result.toArray()));
+  } catch (error) {
+    console.error("Error executing statement:", stmt, error.message);
+  }
+}
+
 })
 
 send.handle("stop", () => {
@@ -280,9 +296,9 @@ the easiest way is to copy the import statement into your project.
 
    `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/main/README.md`
 
-   or the current version 0.0.1 via:
+   or the current version 0.0.2 via:
 
-   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.1/README.md`
+   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.2/README.md`
 
 2. __Copy the definitions into your Project__
 
