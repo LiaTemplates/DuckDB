@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 
-version:  0.0.2
+version:  0.0.3
 
 email:    LiaScript@web.de
 
@@ -181,6 +181,8 @@ setTimeout(async () => {
 let db = await window.duckdbinit("@0")
 const conn = await db.connect();
 
+await conn.query("PRAGMA explain_output = 'all';");
+
 // Run a query
 const statements = `@input`
   .split(';')
@@ -189,8 +191,18 @@ const statements = `@input`
 
 for (const stmt of statements) {
   try {
-    const result = await conn.query(stmt);
-    console.html(window.renderTable(result.toArray()));
+    if (statements.length > 1) {
+      console.debug(stmt);
+    }
+
+    let result = await conn.query(stmt);
+
+    result = result.toArray();
+    if (result.length > 0 && result[0]["explain_value"]) {
+       console.debug(result[0]["explain_value"]);
+    } else {
+      console.html(window.renderTable(result));
+    }
   } catch (error) {
     console.error("Error executing statement:", stmt, error.message);
   }
@@ -296,9 +308,9 @@ the easiest way is to copy the import statement into your project.
 
    `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/main/README.md`
 
-   or the current version 0.0.2 via:
+   or the current version 0.0.3 via:
 
-   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.2/README.md`
+   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.3/README.md`
 
 2. __Copy the definitions into your Project__
 
