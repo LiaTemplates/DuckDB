@@ -359,8 +359,14 @@ for (const stmt of statements) {
       diagram = window.dbdiagram(diagram);
       console.html(diagram)
     } else {
-      const result = await conn.query(stmt);
-      console.html(window.renderTable(result.toArray()));
+      let result = await conn.query(stmt);
+
+      result = result.toArray();
+      if (result.length > 0 && result[0]["explain_value"]) {
+        console.debug(result[0]["explain_value"]);
+      } else {
+        console.html(window.renderTable(result));
+      }
     }
   } catch (error) {
     console.error("Error executing statement:", stmt, error.message);
