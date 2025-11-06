@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 
-version:  0.0.3
+version:  0.0.4
 
 email:    LiaScript@web.de
 
@@ -13,6 +13,112 @@ comment:  This template allows you to embed interactive DuckDB queries in LiaScr
 
 @onload
 window.duckdbs = window.duckdbs || {}
+
+window.dbdiagramQuery = `WITH
+-- 1) Alle Basistabellen
+tables AS (
+  SELECT table_schema, table_name
+  FROM information_schema.tables
+  WHERE table_type = 'BASE TABLE'
+),
+
+-- 2) Spalten + Datentypen
+cols AS (
+  SELECT
+    c.table_schema,
+    c.table_name,
+    c.column_name,
+    lower(c.data_type) AS data_type,
+    c.ordinal_position
+  FROM information_schema.columns c
+  JOIN tables t USING (table_schema, table_name)
+),
+
+-- 3) Primärschlüssel-Spalten markieren
+pk_cols AS (
+  SELECT k.table_schema, k.table_name, k.column_name
+  FROM information_schema.table_constraints tc
+  JOIN information_schema.key_column_usage k
+    ON tc.constraint_name = k.constraint_name
+   AND tc.table_schema    = k.table_schema
+   AND tc.table_name      = k.table_name
+  WHERE tc.constraint_type = 'PRIMARY KEY'
+),
+
+-- 4) Fremdschlüssel: von Spalte → referenzierte Tabelle/Spalte
+fk_map AS (
+  SELECT
+    k.table_schema,
+    k.table_name,
+    k.column_name,
+    ccu.table_schema  AS ref_schema,
+    ccu.table_name    AS ref_table,
+    ccu.column_name   AS ref_column
+  FROM information_schema.table_constraints tc
+  JOIN information_schema.key_column_usage k
+    ON tc.constraint_name = k.constraint_name
+   AND tc.table_schema    = k.table_schema
+   AND tc.table_name      = k.table_name
+  JOIN information_schema.referential_constraints rc
+    ON rc.constraint_name = tc.constraint_name
+   AND rc.constraint_schema = tc.table_schema
+  JOIN information_schema.constraint_column_usage ccu
+    ON ccu.constraint_name = rc.unique_constraint_name
+   AND ccu.constraint_schema = rc.unique_constraint_schema
+  WHERE tc.constraint_type = 'FOREIGN KEY'
+),
+
+-- 5) Spaltenzeilen im dbdiagram-Format zusammensetzen
+col_lines AS (
+  SELECT
+    c.table_schema,
+    c.table_name,
+    c.ordinal_position,
+    '  ' || c.column_name || ' ' || c.data_type ||
+    CASE WHEN pk.column_name IS NOT NULL THEN ' [pk]' ELSE '' END ||
+    CASE
+      WHEN fk.ref_table IS NOT NULL
+        THEN ' [ref: > ' || fk.ref_table || '.' || fk.ref_column || ']'
+      ELSE ''
+    END AS line
+  FROM cols c
+  LEFT JOIN pk_cols pk
+    ON pk.table_schema = c.table_schema
+   AND pk.table_name   = c.table_name
+   AND pk.column_name  = c.column_name
+  LEFT JOIN fk_map fk
+    ON fk.table_schema = c.table_schema
+   AND fk.table_name   = c.table_name
+   AND fk.column_name  = c.column_name
+)
+
+-- 6) Pro Tabelle zu einem Block aggregieren
+SELECT
+  'Table ' || t.table_name || ' {\n' ||
+  string_agg(cl.line, '\n' ORDER BY cl.ordinal_position) || '\n}'
+  AS dbdiagram_block
+FROM tables t
+JOIN col_lines cl
+  ON cl.table_schema = t.table_schema
+ AND cl.table_name   = t.table_name
+GROUP BY t.table_schema, t.table_name
+ORDER BY t.table_schema, t.table_name;`
+
+window.dbdiagram = function (dbml) {
+    // Unicode-safe: UTF-8 → base64 → URL-encode
+    const base64 = btoa(unescape(encodeURIComponent(dbml)));
+    const c = encodeURIComponent(base64);
+
+    return `<iframe
+      src="https://dbdiagram.io/embed?c=${c}"
+      width="100%"
+      height="600px"
+      style="border: 0"
+      referrerpolicy="no-referrer"
+      allowfullscreen
+    ></iframe>
+    <center><a style="font-size: smaller" target="_blank" href="https://dbdiagram.io/embed?c=${c}">dbdiagram.io</a></center>`;
+}
 
 if (!window.duckdb) {
   import("https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm")
@@ -195,13 +301,20 @@ for (const stmt of statements) {
       console.debug(stmt);
     }
 
-    let result = await conn.query(stmt);
-
-    result = result.toArray();
-    if (result.length > 0 && result[0]["explain_value"]) {
-       console.debug(result[0]["explain_value"]);
+    if (stmt.toLowerCase().startsWith("erdiagram")) {
+      let diagram = await conn.query(window.dbdiagramQuery);
+      diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
+      diagram = window.dbdiagram(diagram);
+      console.html(diagram)
     } else {
-      console.html(window.renderTable(result));
+      let result = await conn.query(stmt);
+
+      result = result.toArray();
+      if (result.length > 0 && result[0]["explain_value"]) {
+        console.debug(result[0]["explain_value"]);
+      } else {
+        console.html(window.renderTable(result));
+      }
     }
   } catch (error) {
     console.error("Error executing statement:", stmt, error.message);
@@ -240,8 +353,15 @@ const statements = input
 
 for (const stmt of statements) {
   try {
-    const result = await conn.query(stmt);
-    console.html(window.renderTable(result.toArray()));
+    if (stmt.toLowerCase().startsWith("erdiagram")) {
+      let diagram = await conn.query(window.dbdiagramQuery);
+      diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
+      diagram = window.dbdiagram(diagram);
+      console.html(diagram)
+    } else {
+      const result = await conn.query(stmt);
+      console.html(window.renderTable(result.toArray()));
+    }
   } catch (error) {
     console.error("Error executing statement:", stmt, error.message);
   }
@@ -308,9 +428,9 @@ the easiest way is to copy the import statement into your project.
 
    `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/main/README.md`
 
-   or the current version 0.0.3 via:
+   or the current version 0.0.4 via:
 
-   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.3/README.md`
+   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.4/README.md`
 
 2. __Copy the definitions into your Project__
 
