@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 
-version:  0.0.5
+version:  0.0.6
 
 email:    LiaScript@web.de
 
@@ -176,7 +176,9 @@ window.renderTable = function (rows, opts = {}) {
   schema = schema && schema.fields
   ? schema.fields.map(f => ({
       name: f.name,
-      type: duckdbTypeMap[f.type.typeId] || "UNKNOWN"
+      type: duckdbTypeMap[f.type.typeId] || "UNKNOWN",
+      scale: f.type.scale || null,
+      precision: f.type.precision || null
     }))
   : undefined;
 
@@ -230,7 +232,7 @@ window.renderTable = function (rows, opts = {}) {
         if (schema && Array.isArray(schema)) {
           const colSchema = schema.find(s => s.name === c);
           if (colSchema && colSchema.type) {
-            cellValue = formatCellWithType(cellValue, colSchema.type);
+            cellValue = formatCellWithType(cellValue, colSchema);
           } else {
             cellValue = formatCell(cellValue);
           }
@@ -274,15 +276,16 @@ window.renderTable = function (rows, opts = {}) {
   }
 
   // Format cell value based on DuckDB type
-  function formatCellWithType(v, type) {
+  function formatCellWithType(v, schema) {
 
     if (v === null) return 'null';
     if (v === undefined) return 'undefined';
-    switch (type.toLowerCase()) {
+    switch (schema.type.toLowerCase()) {
       case 'bool':
         return v ? 'TRUE' : 'FALSE';
       case 'date': let shorten = true
       case 'timestamp':
+        
         if (typeof v === 'string' || v instanceof Date || typeof v === 'number') {
           try {
             let date = new Date(v).toISOString();
@@ -302,9 +305,21 @@ window.renderTable = function (rows, opts = {}) {
       case 'double':
       case 'float':
       case 'real':
-        return typeof v === 'number' ? v.toLocaleString(undefined, { maximumFractionDigits: 6 }) : String(v);
       case 'decimal':
-        return String(v);
+        if (schema.scale != null && typeof v === 'number') {
+          // Use scale for decimal places
+          return v.toLocaleString('en-US', { minimumFractionDigits: schema.scale, maximumFractionDigits: schema.scale });
+        }
+        if (schema.scale != null && v instanceof Uint32Array && v.length === 4) {
+          // Convert Uint32Array decimal to string using scale
+          const val = BigInt(v[0]) + (BigInt(v[1]) << 32n) + (BigInt(v[2]) << 64n) + (BigInt(v[3]) << 96n);
+          let str = val.toString();
+          while (str.length <= schema.scale) str = '0' + str;
+          str = str.slice(0, -schema.scale) + '.' + str.slice(-schema.scale);
+          if (str.endsWith('.')) str = str.slice(0, -1);
+          return str;
+        }
+        return typeof v === 'number' ? v.toLocaleString('en-US', { maximumFractionDigits: 6 }) : String(v);
       case 'json':
         try { return JSON.stringify(typeof v === 'string' ? JSON.parse(v) : v); } catch { return String(v); }
       default:
@@ -389,7 +404,6 @@ for (const stmt of statements) {
       if (array.length > 0 && array[0]["explain_value"]) {
         console.debug(array[0]["explain_value"]);
       } else {
-        window.console.log("XXXXXXXXXXXXXXX", result)
         console.html(window.renderTable(array, {schema : result.schema }));
       }
     }
@@ -415,7 +429,7 @@ const conn = await db.connect();
 // Run a query
 conn.query(`@input`)
 .then((result) => {
-  console.html(window.renderTable(result.toArray()));
+  console.html(window.renderTable(result.toArray(), {schema: result.schema}));
 })
 .catch((error) => {
   console.error(error.message)
@@ -438,11 +452,12 @@ for (const stmt of statements) {
     } else {
       let result = await conn.query(stmt);
 
-      result = result.toArray();
-      if (result.length > 0 && result[0]["explain_value"]) {
-        console.debug(result[0]["explain_value"]);
+      let array = result.toArray();
+      if (array.length > 0 && array[0]["explain_value"]) {
+        console.debug(array[0]["explain_value"]);
       } else {
-        console.html(window.renderTable(result));
+        console.html(window.renderTable(array, {schema: result.schema}));
+        
       }
     }
   } catch (error) {
@@ -511,9 +526,9 @@ the easiest way is to copy the import statement into your project.
 
    `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/main/README.md`
 
-   or the current version 0.0.5 via:
+   or the current version 0.0.6 via:
 
-   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.5/README.md`
+   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.6/README.md`
 
 2. __Copy the definitions into your Project__
 
@@ -550,7 +565,7 @@ SELECT city, (temp_hi + temp_lo) / 2 AS temp_avg, date
 FROM weather
 ORDER BY temp_avg DESC;
 ```
-@DuckDB.eval(demo)
+@DuckDB.terminal(demo)
 
     --{{2}}--
 DuckDB excels at analytical queries with aggregations and window functions:
