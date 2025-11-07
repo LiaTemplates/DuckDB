@@ -156,8 +156,30 @@ if (!window.duckdb) {
 
 
 window.renderTable = function (rows, opts = {}) {
-  const { columns, caption, maxRows } = opts;
+  let { columns, caption, maxRows, schema } = opts;
   const data = Array.isArray(rows) ? rows : [];
+
+  const duckdbTypeMap = {
+    0: "NULL",
+    1: "BOOL",
+    2: "INT8",
+    3: "INT16",
+    4: "INT32",
+    5: "VARCHAR",
+    6: "FLOAT",
+    7: "DOUBLE",
+    8: "DATE",
+    9: "TIMESTAMP",
+    // ... weitere Typen nach Bedarf ergänzen
+  };
+
+  schema = schema && schema.fields
+  ? schema.fields.map(f => ({
+      name: f.name,
+      type: duckdbTypeMap[f.type.typeId] || "UNKNOWN"
+    }))
+  : undefined;
+
 
   if (data.length === 0) {
     return `<table style="${baseTableStyle()}"><caption style="${captionStyle()}">${
@@ -184,13 +206,17 @@ window.renderTable = function (rows, opts = {}) {
     html += `<caption style="${captionStyle()}">${escapeHTML(caption)}</caption>`;
 
   // header
-    html += `<thead><tr>`;
-    // Add empty header for row number
-    html += `<th style="${thStyle()}"></th>`;
-    for (const c of cols) {
-      html += `<th style="${thStyle()}">${escapeHTML(c)}</th>`;
-    }
-    html += `</tr></thead>`;
+  html += `<thead>`;
+  html += `<tr>`;
+  // Add empty header for row number
+  html += `<th style="${thStyle()}"></th>`;
+  for (const c of cols) {
+    html += `<th style="${thStyle()}">${escapeHTML(c)}`;
+    
+    html += `</th>`;
+  }
+  html += `</tr>`;
+  html += `</thead>`;
 
   // body
     html += `<tbody>`;
@@ -200,7 +226,18 @@ window.renderTable = function (rows, opts = {}) {
       // Add row number as first cell, no header
       html += `<td style="${tdStyle('italic', '#888')}">${i + 1}</td>`;
       for (const c of cols) {
-        html += `<td style="${tdStyle()}">${escapeHTML(formatCell(row[c]))}</td>`;
+        let cellValue = row[c];
+        if (schema && Array.isArray(schema)) {
+          const colSchema = schema.find(s => s.name === c);
+          if (colSchema && colSchema.type) {
+            cellValue = formatCellWithType(cellValue, colSchema.type);
+          } else {
+            cellValue = formatCell(cellValue);
+          }
+        } else {
+          cellValue = formatCell(cellValue);
+        }
+        html += `<td style="${tdStyle()}">${escapeHTML(cellValue)}</td>`;
       }
       html += `</tr>`;
     }
@@ -234,6 +271,45 @@ window.renderTable = function (rows, opts = {}) {
       try { return JSON.stringify(v); } catch { return '[Object]'; }
     }
     return String(v);
+  }
+
+  // Format cell value based on DuckDB type
+  function formatCellWithType(v, type) {
+
+    if (v === null) return 'null';
+    if (v === undefined) return 'undefined';
+    switch (type.toLowerCase()) {
+      case 'bool':
+        return v ? 'TRUE' : 'FALSE';
+      case 'date': let shorten = true
+      case 'timestamp':
+        if (typeof v === 'string' || v instanceof Date || typeof v === 'number') {
+          try {
+            let date = new Date(v).toISOString();
+            if (shorten) {
+              date = date.slice(0,10)
+            }
+            return date
+          } catch {
+            return String(v);
+          }
+        }
+        return String(v);
+      case 'bigint':
+      case 'hugeint':
+        // DuckDB returns BigInt as JS BigInt or string
+        return typeof v === 'bigint' ? v.toString() : String(v);
+      case 'double':
+      case 'float':
+      case 'real':
+        return typeof v === 'number' ? v.toLocaleString(undefined, { maximumFractionDigits: 6 }) : String(v);
+      case 'decimal':
+        return String(v);
+      case 'json':
+        try { return JSON.stringify(typeof v === 'string' ? JSON.parse(v) : v); } catch { return String(v); }
+      default:
+        return formatCell(v);
+    }
   }
 
   // dark theme styles
@@ -309,11 +385,12 @@ for (const stmt of statements) {
     } else {
       let result = await conn.query(stmt);
 
-      result = result.toArray();
-      if (result.length > 0 && result[0]["explain_value"]) {
-        console.debug(result[0]["explain_value"]);
+      let array = result.toArray();
+      if (array.length > 0 && array[0]["explain_value"]) {
+        console.debug(array[0]["explain_value"]);
       } else {
-        console.html(window.renderTable(result));
+        window.console.log("XXXXXXXXXXXXXXX", result)
+        console.html(window.renderTable(array, {schema : result.schema }));
       }
     }
   } catch (error) {
