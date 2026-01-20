@@ -192,16 +192,61 @@ window.renderChart = function (rows, opts = {}) {
     return value;
   }
 
-  // Helper function to convert values to numbers (but preserve dates)
-  function toNumber(value) {
+  // Helper function to convert values to numbers (but preserve dates for X-axis)
+  function toNumber(value, isXAxis = false) {
     if (value === null || value === undefined) return null;
-    if (isDateLike(value)) return formatDate(value); // Keep dates as strings
+    
+    // Handle Uint32Array (DuckDB uses this for certain integer types)
+    if (value instanceof Uint32Array) {
+      // For single value arrays, extract the number
+      if (value.length === 1) return value[0];
+      // For multi-value arrays (e.g., 128-bit integers), convert to BigInt then Number
+      if (value.length === 4) {
+        try {
+          const bigIntVal = BigInt(value[0]) + (BigInt(value[1]) << 32n) + 
+                           (BigInt(value[2]) << 64n) + (BigInt(value[3]) << 96n);
+          return Number(bigIntVal);
+        } catch {
+          return value[0]; // Fallback to first element
+        }
+      }
+      return value[0]; // Default: return first element
+    }
+    
+    // For X-axis, preserve date/timestamp values
+    if (isXAxis && isDateLike(value)) {
+      // Keep numeric timestamps as-is for time axis
+      if (typeof value === 'number') return value;
+      // Format date strings
+      return formatDate(value);
+    }
+    
+    // For Y-axis or non-date values, always try to convert to number
     if (typeof value === 'number') return value;
     if (typeof value === 'bigint') return Number(value);
+    
     if (typeof value === 'string') {
-      const parsed = parseFloat(value);
+      // Aggressively remove all quotes and try to parse
+      let cleaned = value;
+      
+      // Try JSON.parse first for escaped strings like "\"281\""
+      try {
+        const jsonParsed = JSON.parse(cleaned);
+        if (typeof jsonParsed === 'number') return jsonParsed;
+        if (typeof jsonParsed === 'string') cleaned = jsonParsed;
+      } catch {
+        // Not JSON, continue with manual cleaning
+      }
+      
+      // Remove all quotes (single and double) and whitespace
+      cleaned = cleaned.replace(/["']/g, '').trim();
+      
+      // Try to parse as number
+      const parsed = parseFloat(cleaned);
+      // Return parsed number if valid, otherwise return original
       return isNaN(parsed) ? value : parsed;
     }
+    
     return value;
   }
 
@@ -227,7 +272,11 @@ window.renderChart = function (rows, opts = {}) {
   const series = yColumns.map(col => ({
     name: col,
     type: chartType,
-    data: data.map(row => [row[xColumn], toNumber(row[col])])
+    data: data.map(row => {
+      const xValue = toNumber(row[xColumn], true);  // isXAxis = true
+      const yValue = toNumber(row[col], false);      // isXAxis = false
+      return [xValue, yValue];
+    })
   }));
 
   // Create eCharts option
@@ -511,7 +560,7 @@ for (const stmt of statements) {
       diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
       diagram = window.dbdiagram(diagram);
       console.html(diagram)
-    } else if (stmt.toLowerCase().startsWith("chart ")) {
+    } else if (stmt.toLowerCase().startsWith("chart")) {
       // Extract query after CHART keyword
       const query = stmt.substring(6).trim();
       let result = await conn.query(query);
@@ -563,7 +612,7 @@ for (const stmt of statements) {
       diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
       diagram = window.dbdiagram(diagram);
       console.html(diagram)
-    } else if (stmt.toLowerCase().startsWith("chart ")) {
+    } else if (stmt.toLowerCase().startsWith("chart")) {
       // Extract query after CHART keyword
       const query = stmt.substring(6).trim();
       let result = await conn.query(query);
@@ -592,7 +641,7 @@ for (const stmt of statements) {
       diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
       diagram = window.dbdiagram(diagram);
       console.html(diagram)
-    } else if (stmt.toLowerCase().startsWith("chart ")) {
+    } else if (stmt.toLowerCase().startsWith("chart")) {
       // Extract query after CHART keyword
       const query = stmt.substring(6).trim();
       let result = await conn.query(query);
@@ -844,7 +893,7 @@ LIMIT 10;
 ```
 @DuckDB.eval(files)
 
-## Advanced Features
+## Advanced Features (& `CHART`)
 
     --{{0}}--
 DuckDB supports a rich set of SQL features including window functions, CTEs
@@ -880,7 +929,7 @@ You can also use CTEs for complex queries:
 
     {{1}}
 ``` SQL
--- Using Common Table Expressions (CTEs)
+CHART
 WITH monthly_stats AS (
     SELECT 
         store,
