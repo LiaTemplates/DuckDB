@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 
-version:  0.0.6
+version:  0.0.7
 
 email:    LiaScript@web.de
 
@@ -216,11 +216,12 @@ window.renderChart = function (rows, opts = {}) {
   const xColumn = columns[0];
   const yColumns = columns.slice(1);
 
-  // Determine chart type based on first column
-  // If first column contains non-date strings, use bar chart
+  // Determine chart type and x-axis type based on first column
   const firstValue = data[0][xColumn];
-  const isCategory = typeof firstValue === 'string' && !isDateLike(firstValue);
+  const isDateColumn = isDateLike(firstValue);
+  const isCategory = typeof firstValue === 'string' && !isDateColumn;
   const chartType = isCategory ? 'bar' : 'line';
+  const xAxisType = isDateColumn ? 'time' : 'category';
 
   // Prepare series data with number conversion
   const series = yColumns.map(col => ({
@@ -249,7 +250,7 @@ window.renderChart = function (rows, opts = {}) {
       containLabel: true
     },
     xAxis: {
-      type: 'category',
+      type: xAxisType,
       name: xColumn,
       nameTextStyle: { color: '#eee' },
       axisLabel: { color: '#aaa' },
@@ -674,9 +675,9 @@ the easiest way is to copy the import statement into your project.
 
    `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/main/README.md`
 
-   or the current version 0.0.6 via:
+   or the current version 0.0.7 via:
 
-   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.6/README.md`
+   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.7/README.md`
 
 2. __Copy the definitions into your Project__
 
