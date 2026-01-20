@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 
-version:  0.0.7
+version:  0.0.8
 
 email:    LiaScript@web.de
 
@@ -724,9 +724,9 @@ the easiest way is to copy the import statement into your project.
 
    `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/main/README.md`
 
-   or the current version 0.0.7 via:
+   or the current version 0.0.8 via:
 
-   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.7/README.md`
+   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.8/README.md`
 
 2. __Copy the definitions into your Project__
 
