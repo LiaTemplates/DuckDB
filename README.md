@@ -155,6 +155,119 @@ if (!window.duckdb) {
 }
 
 
+window.renderChart = function (rows, opts = {}) {
+  const data = Array.isArray(rows) ? rows : [];
+  
+  if (data.length === 0) {
+    return '<div style="padding: 20px; color: #aaa;">No data to display</div>';
+  }
+
+  // Helper function to check if value is a date/timestamp
+  function isDateLike(value) {
+    if (value instanceof Date) return true;
+    if (typeof value === 'string') {
+      // Check for ISO date format or common date patterns
+      const isoDatePattern = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/;
+      return isoDatePattern.test(value);
+    }
+    return false;
+  }
+
+  // Helper function to format date values
+  function formatDate(value) {
+    if (value instanceof Date) {
+      return value.toISOString().slice(0, 10);
+    }
+    if (typeof value === 'string') {
+      // If it looks like a timestamp, format it
+      if (value.includes('T')) {
+        try {
+          return new Date(value).toISOString().slice(0, 10);
+        } catch {
+          return value;
+        }
+      }
+      return value; // Already in date format
+    }
+    return value;
+  }
+
+  // Helper function to convert values to numbers (but preserve dates)
+  function toNumber(value) {
+    if (value === null || value === undefined) return null;
+    if (isDateLike(value)) return formatDate(value); // Keep dates as strings
+    if (typeof value === 'number') return value;
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value);
+      return isNaN(parsed) ? value : parsed;
+    }
+    return value;
+  }
+
+  // Extract column names from first row
+  const columns = Object.keys(data[0] || {});
+  
+  if (columns.length < 2) {
+    return '<div style="padding: 20px; color: #aaa;">Need at least 2 columns for chart</div>';
+  }
+
+  // Assume first column is x-axis, rest are series
+  const xColumn = columns[0];
+  const yColumns = columns.slice(1);
+
+  // Determine chart type based on first column
+  // If first column contains non-date strings, use bar chart
+  const firstValue = data[0][xColumn];
+  const isCategory = typeof firstValue === 'string' && !isDateLike(firstValue);
+  const chartType = isCategory ? 'bar' : 'line';
+
+  // Prepare series data with number conversion
+  const series = yColumns.map(col => ({
+    name: col,
+    type: chartType,
+    data: data.map(row => [row[xColumn], toNumber(row[col])])
+  }));
+
+  // Create eCharts option
+  const option = {
+    title: {
+      text: opts.title || '',
+      textStyle: { color: '#eee' }
+    },
+    tooltip: {
+      trigger: 'axis'
+    },
+    legend: {
+      data: yColumns,
+      textStyle: { color: '#eee' }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      name: xColumn,
+      nameTextStyle: { color: '#eee' },
+      axisLabel: { color: '#aaa' },
+      axisLine: { lineStyle: { color: '#555' } }
+    },
+    yAxis: {
+      type: 'value',
+      nameTextStyle: { color: '#eee' },
+      axisLabel: { color: '#aaa' },
+      axisLine: { lineStyle: { color: '#555' } },
+      splitLine: { lineStyle: { color: '#333' } }
+    },
+    series: series
+  };
+
+  return "<lia-chart style='width: 100%; height: 180px;' option='" + JSON.stringify(option) + "'></lia-chart>";
+}
+
 window.renderTable = function (rows, opts = {}) {
   let { columns, caption, maxRows, schema } = opts;
   const data = Array.isArray(rows) ? rows : [];
@@ -397,6 +510,12 @@ for (const stmt of statements) {
       diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
       diagram = window.dbdiagram(diagram);
       console.html(diagram)
+    } else if (stmt.toLowerCase().startsWith("chart ")) {
+      // Extract query after CHART keyword
+      const query = stmt.substring(6).trim();
+      let result = await conn.query(query);
+      let array = result.toArray();
+      console.html(window.renderChart(array));
     } else {
       let result = await conn.query(stmt);
 
@@ -412,7 +531,7 @@ for (const stmt of statements) {
   }
 }
  conn.close()
-  send.lia("")
+  send.lia("LIA: stop")
 
 }, 100)
 
@@ -426,14 +545,37 @@ setTimeout(async () => {
 let db = await window.duckdbinit("@0")
 const conn = await db.connect();
 
-// Run a query
-conn.query(`@input`)
-.then((result) => {
-  console.html(window.renderTable(result.toArray(), {schema: result.schema}));
-})
-.catch((error) => {
-  console.error(error.message)
-})
+// Run initial query/queries
+const statements = `@input`
+  .split(';')
+  .map(s => s.trim())
+  .filter(s => s.length > 0);
+
+for (const stmt of statements) {
+  try {
+    if (statements.length > 1) {
+      console.debug(stmt);
+    }
+
+    if (stmt.toLowerCase().startsWith("erdiagram")) {
+      let diagram = await conn.query(window.dbdiagramQuery);
+      diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
+      diagram = window.dbdiagram(diagram);
+      console.html(diagram)
+    } else if (stmt.toLowerCase().startsWith("chart ")) {
+      // Extract query after CHART keyword
+      const query = stmt.substring(6).trim();
+      let result = await conn.query(query);
+      let array = result.toArray();
+      console.html(window.renderChart(array));
+    } else {
+      let result = await conn.query(stmt);
+      console.html(window.renderTable(result.toArray(), {schema: result.schema}));
+    }
+  } catch (error) {
+    console.error(error.message)
+  }
+}
 
 send.handle("input", async (input) => {
     // Run a query
@@ -449,6 +591,12 @@ for (const stmt of statements) {
       diagram = diagram.toArray().map(r => r["dbdiagram_block"]).join("\n\n");
       diagram = window.dbdiagram(diagram);
       console.html(diagram)
+    } else if (stmt.toLowerCase().startsWith("chart ")) {
+      // Extract query after CHART keyword
+      const query = stmt.substring(6).trim();
+      let result = await conn.query(query);
+      let array = result.toArray();
+      console.html(window.renderChart(array));
     } else {
       let result = await conn.query(stmt);
 
