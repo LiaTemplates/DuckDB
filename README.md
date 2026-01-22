@@ -1,7 +1,7 @@
 <!--
 author:   André Dietrich
 
-version:  0.0.8
+version:  0.0.9
 
 email:    LiaScript@web.de
 
@@ -253,6 +253,63 @@ window.renderChart = function (rows, opts = {}) {
   // Extract column names from first row
   const columns = Object.keys(data[0] || {});
   
+  if (columns.length < 1) {
+    return '<div style="padding: 20px; color: #aaa;">Need at least 1 column for chart</div>';
+  }
+
+  // Special case: Single row - transpose data (columns become categories)
+  if (data.length === 1) {
+    const row = data[0];
+    const categories = [];
+    const values = [];
+    
+    for (const col of columns) {
+      categories.push(col);
+      values.push(toNumber(row[col], false));
+    }
+    
+    const option = {
+      title: {
+        text: opts.title || '',
+        textStyle: { color: '#eee' }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: categories,
+        nameTextStyle: { color: '#eee' },
+        axisLabel: { color: '#aaa', rotate: 45 },
+        axisLine: { lineStyle: { color: '#555' } }
+      },
+      yAxis: {
+        type: 'value',
+        nameTextStyle: { color: '#eee' },
+        axisLabel: { color: '#aaa' },
+        axisLine: { lineStyle: { color: '#555' } },
+        splitLine: { lineStyle: { color: '#333' } }
+      },
+      series: [{
+        type: 'bar',
+        data: values,
+        itemStyle: {
+          color: '#5470c6'
+        }
+      }]
+    };
+    
+    return "<lia-chart style='width: 100%; height: 400px; resize: vertical; overflow: auto; display: block; border: 1px solid #555;' option='" + JSON.stringify(option) + "'></lia-chart>";
+  }
+
+  // Multi-row case: Normal chart behavior
   if (columns.length < 2) {
     return '<div style="padding: 20px; color: #aaa;">Need at least 2 columns for chart</div>';
   }
@@ -315,7 +372,7 @@ window.renderChart = function (rows, opts = {}) {
     series: series
   };
 
-  return "<lia-chart style='width: 100%; height: 180px;' option='" + JSON.stringify(option) + "'></lia-chart>";
+  return "<lia-chart style='width: 100%; height: 180px; resize: vertical; overflow: auto; display: block; border: 1px solid #555;' option='" + JSON.stringify(option) + "'></lia-chart>";
 }
 
 window.renderTable = function (rows, opts = {}) {
@@ -724,9 +781,9 @@ the easiest way is to copy the import statement into your project.
 
    `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/main/README.md`
 
-   or the current version 0.0.8 via:
+   or the current version 0.0.9 via:
 
-   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.8/README.md`
+   `import: https://raw.githubusercontent.com/LiaTemplates/DuckDB/0.0.9/README.md`
 
 2. __Copy the definitions into your Project__
 
